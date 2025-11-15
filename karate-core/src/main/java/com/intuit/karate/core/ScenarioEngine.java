@@ -798,7 +798,22 @@ public class ScenarioEngine {
         requestBuilder.method(vars.get(REQUEST_METHOD).getValue());
         requestBuilder.headers(vars.get(REQUEST_HEADERS).<Map>getValue());
         requestBuilder.removeHeader(HttpConstants.HDR_CONTENT_LENGTH);
-        requestBuilder.body(vars.get(REQUEST).getValue());
+
+        // handle multipart form data forwarding
+        if (hasVariable("requestParts")) {
+            Map<String, List<Map<String, Object>>> requestParts = (Map<String, List<Map<String, Object>>>) getVariable("requestParts");
+            if (requestParts != null && !requestParts.isEmpty()) {
+                // reconstruct multipart request
+                for (Map.Entry<String, List<Map<String, Object>>> entry : requestParts.entrySet()) {
+                    for (Map<String, Object> part : entry.getValue()) {
+                        requestBuilder.multiPart(part);
+                    }
+                }
+            }
+        } else {
+            requestBuilder.body(vars.get(REQUEST).getValue());
+        }
+
         if (requestBuilder.client instanceof ArmeriaHttpClient) {
             Request mockRequest = MockHandler.LOCAL_REQUEST.get();
             if (mockRequest != null) {

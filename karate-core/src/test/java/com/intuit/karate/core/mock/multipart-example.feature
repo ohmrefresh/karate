@@ -60,8 +60,33 @@ Scenario: Multiple files in multipart request
     When method post
     Then status 200
 
+# ============================================================================
+# Forwarding Multipart Requests with karate.proceed()
+# ============================================================================
+
+# When using the mock server as a proxy, multipart requests can be forwarded
+# to upstream servers while preserving all form data
+
+Scenario: Mock server forwards multipart to upstream
+    # Server-side mock scenario:
+    # Scenario: pathMatches('/api/upload')
+    #     # inspect multipart data before forwarding
+    #     * def usernamePart = requestParts.username[0]
+    #     * print 'Forwarding upload for user:', usernamePart.value
+    #     # forward to upstream server with all multipart data intact
+    #     * karate.proceed('https://upstream-server.com')
+    #     # response from upstream is now available
+
+    Given url mockServerUrl + 'api/upload'
+    And multipart field username = 'bob'
+    And multipart file document = { read: 'test.pdf.zip', filename: 'report.pdf' }
+    When method post
+    Then status 200
+
 # Key Benefits:
 # 1. Consistent access pattern - all multipart data via requestParts
 # 2. Text fields include: name, value, charset
 # 3. File fields include: name, value (bytes), filename, contentType, charset, transferEncoding
 # 4. Backward compatible - text fields still accessible via requestParams
+# 5. Multipart requests can be forwarded to upstream servers via karate.proceed()
+# 6. ProxyRequest.getMultiParts() available for custom RequestFilter implementations

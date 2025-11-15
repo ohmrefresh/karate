@@ -220,6 +220,8 @@ class MockHandlerTest {
 
     @Test
     void testMultiPartTextFieldsInRequestParts() {
+        // Improved multipart support: text fields are now available in requestParts
+        // This provides consistent access pattern for all multipart data
         background().scenario(
                 "pathMatches('/hello')",
                 // text fields now also available in requestParts
