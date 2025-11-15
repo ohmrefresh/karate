@@ -73,9 +73,13 @@ Scenario: pathMatches('/v1/upload/excel')
     * def response = filePart
 
 Scenario: pathMatches('/v1/multipart')
-    * def response = { success: true }
+    # both text fields and file fields are now available in requestParts
+    * def messagePart = requestParts['message'][0]
+    * def filePart = requestParts['myFile'][0]
+    * def response = { success: true, message: '#(messagePart.value)', fileName: '#(filePart.filename)' }
 
 Scenario: pathMatches('/v1/multipart/json')
+    # json fields in multipart are available in both requestParams and requestParts
     * json response = requestParams['message'][0]
 
 Scenario: pathMatches('/v1/form')

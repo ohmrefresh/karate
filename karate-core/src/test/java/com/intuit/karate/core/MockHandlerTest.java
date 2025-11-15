@@ -219,6 +219,43 @@ class MockHandlerTest {
     }
 
     @Test
+    void testMultiPartTextFieldsInRequestParts() {
+        background().scenario(
+                "pathMatches('/hello')",
+                // text fields now also available in requestParts
+                "def foo = requestParts.foo[0].value",
+                "def bar = requestParts.bar[0].value",
+                "def fileName = requestParts.bar[0].filename",
+                "def response = { foo: '#(foo)', bar: '#(bar)', hasFileName: '#(fileName != null)' }"
+        );
+        request.path("/hello")
+                .multiPartJson("{ name: 'foo', value: 'hello world' }")
+                .multiPartJson("{ name: 'bar', value: 'some bytes', filename: 'bar.txt' }")
+                .method("POST");
+        handle();
+        match(response.getBodyConverted(), "{ foo: 'hello world', bar: 'some bytes', hasFileName: true }");
+    }
+
+    @Test
+    void testMultiPartMixedFieldsAndFiles() {
+        background().scenario(
+                "pathMatches('/upload')",
+                // access both text fields and file fields via requestParts
+                "def textField = requestParts.message[0].value",
+                "def fileField = requestParts.document[0].value",
+                "def fileName = requestParts.document[0].filename",
+                "def contentType = requestParts.document[0].contentType",
+                "def response = { message: '#(textField)', fileName: '#(fileName)', contentType: '#(contentType)', fileSize: '#(fileField.length)' }"
+        );
+        request.path("/upload")
+                .multiPartJson("{ name: 'message', value: 'test message' }")
+                .multiPartJson("{ name: 'document', value: 'file content', filename: 'doc.txt', contentType: 'text/plain' }")
+                .method("POST");
+        handle();
+        match(response.getBodyConverted(), "{ message: 'test message', fileName: 'doc.txt', contentType: 'text/plain', fileSize: 12 }");
+    }
+
+    @Test
     void testAbort() {
         background().scenario(
                 "pathMatches('/hello')",

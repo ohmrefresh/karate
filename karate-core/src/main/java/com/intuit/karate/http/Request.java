@@ -516,8 +516,21 @@ public class Request implements ProxyObject {
                     }
                 } else { // form-field, url-encoded if not multipart
                     Attribute attribute = (Attribute) part;
+                    String value = attribute.getValue();
                     List<String> list = params.computeIfAbsent(name, k -> new ArrayList<>());
-                    list.add(attribute.getValue());
+                    list.add(value);
+                    // also add multipart text fields to requestParts for consistency
+                    if (multipart) {
+                        List<Map<String, Object>> partList = multiParts.computeIfAbsent(name, k -> new ArrayList<>());
+                        Map<String, Object> map = new HashMap<>();
+                        partList.add(map);
+                        map.put("name", name);
+                        map.put("value", value);
+                        Charset charset = attribute.getCharset();
+                        if (charset != null) {
+                            map.put("charset", charset.name());
+                        }
+                    }
                 }
             }
         } catch (Exception e) {
