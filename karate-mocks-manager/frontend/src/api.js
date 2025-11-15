@@ -28,4 +28,39 @@ export const fileApi = {
   delete: (filename) => api.delete(`/files/${filename}`)
 }
 
+export const openApiApi = {
+  import: (file, featureName) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (featureName) formData.append('featureName', featureName)
+    return api.post('/openapi/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  convert: (content, featureName) => api.post('/openapi/convert', { content, featureName })
+}
+
+export const recordingApi = {
+  startSession: (sessionId, targetBaseUrl, proxyPort) =>
+    api.post('/recording/sessions', { sessionId, targetBaseUrl, proxyPort }),
+  stopSession: (sessionId) => api.delete(`/recording/sessions/${sessionId}`),
+  getAllSessions: () => api.get('/recording/sessions'),
+  getSession: (sessionId) => api.get(`/recording/sessions/${sessionId}`),
+  getRecordings: (sessionId) => api.get(`/recording/sessions/${sessionId}/recordings`),
+  generateFeature: (sessionId, featureName) =>
+    api.post(`/recording/sessions/${sessionId}/generate`, { featureName }),
+  clearRecordings: (sessionId) => api.delete(`/recording/sessions/${sessionId}/recordings`)
+}
+
+export const performanceApi = {
+  createTest: (name, featureFile, users, rampUpSeconds, durationSeconds) =>
+    api.post('/performance/tests', { name, featureFile, users, rampUpSeconds, durationSeconds }),
+  startTest: (testId) => api.post(`/performance/tests/${testId}/start`),
+  getAllTests: () => api.get('/performance/tests'),
+  getTest: (testId) => api.get(`/performance/tests/${testId}`),
+  deleteTest: (testId) => api.delete(`/performance/tests/${testId}`),
+  generateSimulation: (featureFile, simulationName) =>
+    api.post('/performance/generate-simulation', { featureFile, simulationName })
+}
+
 export default api

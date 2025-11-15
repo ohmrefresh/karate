@@ -1,6 +1,6 @@
 # Karate API Mocks Manager
 
-A modern web application to manage Karate API Mock servers with real-time monitoring, visual editor, and state management.
+A modern web application to manage Karate API Mock servers with real-time monitoring, visual editor, state management, and advanced Phase 2 features including OpenAPI import, API recording, and performance testing.
 
 ## Features
 
@@ -12,30 +12,44 @@ A modern web application to manage Karate API Mock servers with real-time monito
 - **State Management**: View and edit global variables in running mocks
 - **Server Configuration**: Configure ports, path prefixes, SSL, and hot-reload
 
+### Phase 2 (Complete) ✨
+
+- **OpenAPI/Swagger Import**: Convert OpenAPI specifications to Karate mocks automatically
+- **API Recording Proxy**: Record real API traffic and generate mock features
+- **Performance Testing**: Load test your mocks with Karate Gatling integration
+  - Concurrent user simulation
+  - Detailed metrics and percentiles
+  - Scenario-level performance tracking
+
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│   React Frontend (Vite)             │
-│   - Dashboard                       │
-│   - Mock Editor (Monaco)            │
-│   - Request Monitor                 │
-│   - State Explorer                  │
-└──────────────┬──────────────────────┘
+┌─────────────────────────────────────────────────┐
+│          React Frontend (Vite)                  │
+│   Phase 1:                                      │
+│   - Dashboard          - Mock Editor            │
+│   - Request Monitor    - State Explorer         │
+│   Phase 2:                                      │
+│   - OpenAPI Import     - Recording Proxy        │
+│   - Performance Testing                         │
+└──────────────┬──────────────────────────────────┘
                │ REST + WebSocket
-┌──────────────▼──────────────────────┐
-│   Spring Boot Backend               │
-│   - Mock Server Management API      │
-│   - File Upload/Management          │
-│   - WebSocket for live updates      │
-└──────────────┬──────────────────────┘
+┌──────────────▼──────────────────────────────────┐
+│          Spring Boot Backend                    │
+│   - Mock Server Management API                  │
+│   - File Upload/Management                      │
+│   - OpenAPI Parser & Converter                  │
+│   - HTTP Recording Proxy                        │
+│   - Performance Test Manager (Gatling)          │
+│   - WebSocket for live updates                  │
+└──────────────┬──────────────────────────────────┘
                │
-┌──────────────▼──────────────────────┐
-│   Enhanced Karate MockServer        │
-│   - Request/Response logging        │
-│   - Variable access                 │
-│   - Performance tracking            │
-└─────────────────────────────────────┘
+┌──────────────▼──────────────────────────────────┐
+│          Enhanced Karate MockServer             │
+│   - Request/Response logging                    │
+│   - Variable access & modification              │
+│   - Performance tracking & metrics              │
+└─────────────────────────────────────────────────┘
 ```
 
 ## Getting Started
@@ -190,30 +204,56 @@ Scenario: pathMatches('/api/data')
 
 ## UI Components
 
-### Dashboard
+### Phase 1 Components
+
+#### Dashboard
 - View all running mock servers
 - Start new servers with custom configuration
 - Stop running servers
 - Monitor server metrics (requests, uptime)
 
-### Mock Editor
+#### Mock Editor
 - Upload `.feature` files
 - Edit mocks with Monaco editor (VS Code's editor)
 - Syntax highlighting for Gherkin
 - Save changes with hot-reload
 
-### Request Monitor
+#### Request Monitor
 - Real-time request/response logging
 - Filter by server
 - View request details (headers, body, matched scenario)
 - Performance metrics (response time)
 - Live mode with WebSocket updates
 
-### State Explorer
+#### State Explorer
 - View global variables for each server
 - Edit variables in real-time
 - Add new variables
 - JSON editing with validation
+
+### Phase 2 Components ✨
+
+#### OpenAPI Import
+- Upload OpenAPI/Swagger files (JSON/YAML)
+- Convert specifications to Karate features
+- Preview generated code
+- Automatic parameter extraction
+- Response example generation
+
+#### Recording Proxy
+- Start/stop recording sessions
+- Capture real API traffic
+- View recorded requests/responses
+- Generate features from recordings
+- Filter and organize recordings
+
+#### Performance Testing
+- Create load tests from feature files
+- Configure concurrent users and duration
+- Real-time test execution monitoring
+- Detailed performance metrics
+- Percentile-based response time analysis
+- Scenario-level statistics
 
 ## Configuration
 
@@ -283,17 +323,45 @@ Check that:
 - CORS is properly configured
 - No firewall blocking WebSocket connections
 
-## Future Enhancements (Phase 2+)
+## Phase 2 Quick Start
 
-- [ ] OpenAPI spec import
-- [ ] Mock recording from real APIs
-- [ ] Performance testing integration
-- [ ] Docker/Kubernetes deployment
-- [ ] Multi-user authentication
-- [ ] Mock versioning and history
+### OpenAPI Import
+
+```bash
+# Upload your OpenAPI spec in the UI (OpenAPI Import tab) or via API
+curl -X POST http://localhost:9090/api/openapi/import \
+  -F "file=@examples/petstore-openapi.json" \
+  -F "featureName=PetStore"
+```
+
+### Recording API Traffic
+
+```bash
+# 1. Start recording session in UI (Recording tab)
+# 2. Send requests through the proxy:
+curl http://localhost:9090/api/recording/proxy/my-session/users
+
+# 3. Generate feature file from recordings
+```
+
+### Performance Testing
+
+Create and run load tests via the **Performance** tab. Tests use your existing `.feature` files to simulate concurrent users and measure performance.
+
+**For detailed Phase 2 documentation, see [PHASE2.md](PHASE2.md)**
+
+## Future Enhancements (Phase 3+)
+
+- [ ] Docker/Kubernetes deployment templates
+- [ ] Multi-user authentication and authorization
+- [ ] Mock versioning and history tracking
 - [ ] Export/import mock collections
-- [ ] Scenario debugging tools
-- [ ] AI-powered mock generation
+- [ ] Advanced scenario debugging tools
+- [ ] AI-powered mock data generation
+- [ ] Contract testing integration (Pact, Spring Cloud Contract)
+- [ ] GraphQL mock support
+- [ ] gRPC mock support
+- [ ] Chaos engineering features (latency injection, failure simulation)
 
 ## Contributing
 

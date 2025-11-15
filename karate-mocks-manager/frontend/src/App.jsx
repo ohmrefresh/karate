@@ -4,6 +4,9 @@ import Dashboard from './components/Dashboard'
 import MockEditor from './components/MockEditor'
 import RequestMonitor from './components/RequestMonitor'
 import StateExplorer from './components/StateExplorer'
+import OpenApiImport from './components/OpenApiImport'
+import RecordingProxy from './components/RecordingProxy'
+import PerformanceTesting from './components/PerformanceTesting'
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -43,12 +46,33 @@ function App() {
           >
             State Explorer
           </button>
+          <button
+            className={`tab ${activeTab === 'openapi' ? 'active' : ''}`}
+            onClick={() => setActiveTab('openapi')}
+          >
+            OpenAPI Import
+          </button>
+          <button
+            className={`tab ${activeTab === 'recording' ? 'active' : ''}`}
+            onClick={() => setActiveTab('recording')}
+          >
+            Recording
+          </button>
+          <button
+            className={`tab ${activeTab === 'performance' ? 'active' : ''}`}
+            onClick={() => setActiveTab('performance')}
+          >
+            Performance
+          </button>
         </div>
 
         {activeTab === 'dashboard' && <Dashboard />}
         {activeTab === 'editor' && <MockEditor />}
         {activeTab === 'monitor' && <RequestMonitor />}
         {activeTab === 'state' && <StateExplorer />}
+        {activeTab === 'openapi' && <OpenApiImport />}
+        {activeTab === 'recording' && <RecordingProxy />}
+        {activeTab === 'performance' && <PerformanceTesting />}
       </div>
     </div>
   )
