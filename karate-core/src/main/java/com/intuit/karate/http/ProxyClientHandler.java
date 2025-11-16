@@ -30,8 +30,8 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpClientCodec;
@@ -59,15 +59,17 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
 
     protected final RequestFilter requestFilter;
     protected final ResponseFilter responseFilter;
+    protected final EventLoopGroup eventLoopGroup;
     private final Map<String, ProxyRemoteHandler> REMOTE_HANDLERS = new ConcurrentHashMap();
     private final Object LOCK = new Object();
-    
+
     private ProxyRemoteHandler remoteHandler;
     protected Channel clientChannel;
 
-    public ProxyClientHandler(RequestFilter requestFilter, ResponseFilter responseFilter) {
+    public ProxyClientHandler(RequestFilter requestFilter, ResponseFilter responseFilter, EventLoopGroup eventLoopGroup) {
         this.requestFilter = requestFilter;
         this.responseFilter = responseFilter;
+        this.eventLoopGroup = eventLoopGroup;
     }
     
     @Override
@@ -91,7 +93,7 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
             logger.trace(">> init: {} - {}", pc, request);
         }
         Bootstrap b = new Bootstrap();
-        b.group(new NioEventLoopGroup(4));
+        b.group(eventLoopGroup);
         b.channel(NioSocketChannel.class);
         b.handler(new ChannelInitializer() {
             @Override

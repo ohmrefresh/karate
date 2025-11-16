@@ -81,7 +81,7 @@ public class ProxyServer {
                             ChannelPipeline p = c.pipeline();
                             p.addLast(new HttpServerCodec());
                             p.addLast(new HttpObjectAggregator(1048576));
-                            p.addLast(new ProxyClientHandler(requestFilter, responseFilter));
+                            p.addLast(new ProxyClientHandler(requestFilter, responseFilter, workerGroup));
                         }
                     });
             channel = b.bind(requestedPort).sync().channel();
