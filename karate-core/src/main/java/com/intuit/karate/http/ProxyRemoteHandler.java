@@ -29,6 +29,10 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpUtil;
+import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.util.ReferenceCountUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,9 +76,46 @@ public class ProxyRemoteHandler extends SimpleChannelInboundHandler<FullHttpResp
             response = filtered.response;
             if (logger.isTraceEnabled()) {
                 logger.debug("<<<< {}", response);
-            }            
-        }        
-        clientChannel.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            }
+        }
+
+        // HTTP keep-alive support: only close if requested
+        boolean shouldClose = shouldCloseConnection(currentRequest, response);
+
+        if (shouldClose) {
+            if (logger.isTraceEnabled()) {
+                logger.trace("** closing connection (keep-alive=false)");
+            }
+            clientChannel.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        } else {
+            if (logger.isTraceEnabled()) {
+                logger.trace("** keeping connection alive");
+            }
+            clientChannel.writeAndFlush(response);
+            // Connection stays open for next request
+        }
+    }
+
+    private boolean shouldCloseConnection(FullHttpRequest request, FullHttpResponse response) {
+        if (request == null) {
+            return true; // No request context, close to be safe
+        }
+
+        // Check explicit Connection: close header from either side
+        String reqConnection = request.headers().get(HttpHeaderNames.CONNECTION);
+        String resConnection = response.headers().get(HttpHeaderNames.CONNECTION);
+
+        if ("close".equalsIgnoreCase(reqConnection) || "close".equalsIgnoreCase(resConnection)) {
+            return true;
+        }
+
+        // HTTP/1.0 defaults to close unless keep-alive is explicitly requested
+        if (request.protocolVersion().equals(HttpVersion.HTTP_1_0)) {
+            return !"keep-alive".equalsIgnoreCase(reqConnection);
+        }
+
+        // HTTP/1.1 defaults to keep-alive unless close is requested
+        return false;
     }
 
     protected void send(FullHttpRequest request) {
@@ -110,8 +151,27 @@ public class ProxyRemoteHandler extends SimpleChannelInboundHandler<FullHttpResp
         remoteChannel = ctx.channel();
         if (initialRequest != null) { // only if not ssl
             send(initialRequest);
-            clientHandler.unlockAndProceed();
+            // No need to unlock - we're now fully async!
         }
+    }
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt instanceof IdleStateEvent) {
+            if (logger.isTraceEnabled()) {
+                logger.trace("** idle timeout, closing connection: {}", proxyContext.hostColonPort);
+            }
+            ctx.close();
+        } else {
+            super.userEventTriggered(ctx, evt);
+        }
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        // Clean up from shared connection pool when connection closes
+        ProxyClientHandler.removeHandler(proxyContext.hostColonPort, this);
+        super.channelInactive(ctx);
     }
 
     @Override
