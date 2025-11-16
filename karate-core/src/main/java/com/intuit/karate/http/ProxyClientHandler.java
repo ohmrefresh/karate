@@ -32,6 +32,9 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.epoll.EpollSocketChannel;
+import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpClientCodec;
@@ -92,9 +95,13 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
         if (logger.isTraceEnabled()) {
             logger.trace(">> init: {} - {}", pc, request);
         }
+        // Use matching socket channel type based on EventLoopGroup
+        Class<? extends SocketChannel> channelClass = eventLoopGroup instanceof EpollEventLoopGroup
+                ? EpollSocketChannel.class
+                : NioSocketChannel.class;
         Bootstrap b = new Bootstrap();
         b.group(eventLoopGroup);
-        b.channel(NioSocketChannel.class);
+        b.channel(channelClass);
         b.handler(new ChannelInitializer() {
             @Override
             protected void initChannel(Channel remoteChannel) throws Exception {

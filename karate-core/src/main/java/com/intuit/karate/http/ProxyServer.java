@@ -28,6 +28,10 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.ServerChannel;
+import io.netty.channel.epoll.Epoll;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.epoll.EpollServerSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpObjectAggregator;
@@ -69,12 +73,27 @@ public class ProxyServer {
     }
 
     public ProxyServer(int requestedPort, RequestFilter requestFilter, ResponseFilter responseFilter) {
-        bossGroup = new NioEventLoopGroup(1);
-        workerGroup = new NioEventLoopGroup(8);
+        // Use Epoll on Linux for better performance, fallback to NIO on other platforms
+        boolean useEpoll = Epoll.isAvailable();
+        if (useEpoll) {
+            bossGroup = new EpollEventLoopGroup(1);
+            workerGroup = new EpollEventLoopGroup(8);
+            logger.info("using Epoll event loop for optimal performance");
+        } else {
+            bossGroup = new NioEventLoopGroup(1);
+            workerGroup = new NioEventLoopGroup(8);
+            logger.info("using NIO event loop");
+            if (logger.isDebugEnabled() && Epoll.unavailabilityCause() != null) {
+                logger.debug("Epoll not available: {}", Epoll.unavailabilityCause().getMessage());
+            }
+        }
         try {
+            Class<? extends ServerChannel> channelClass = useEpoll
+                    ? EpollServerSocketChannel.class
+                    : NioServerSocketChannel.class;
             ServerBootstrap b = new ServerBootstrap();
             b.group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class)
+                    .channel(channelClass)
                     .childHandler(new ChannelInitializer() {
                         @Override
                         protected void initChannel(Channel c) {
