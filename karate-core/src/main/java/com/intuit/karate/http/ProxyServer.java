@@ -48,6 +48,10 @@ public class ProxyServer {
 
     private static final Logger logger = LoggerFactory.getLogger(ProxyServer.class);
 
+    // Dynamic thread pool sizing based on CPU cores
+    private static final int DEFAULT_BOSS_THREADS = 1;
+    private static final int WORKER_THREADS_PER_CORE = 2;  // I/O bound workload
+
     private final Channel channel;
     private final int port;
     private final EventLoopGroup bossGroup;
@@ -72,16 +76,47 @@ public class ProxyServer {
         logger.info("stop: shutdown complete");
     }
 
+    /**
+     * Calculate optimal worker thread count based on CPU cores.
+     * Uses different strategies based on core count for optimal performance.
+     *
+     * @param cpuCores number of available CPU cores
+     * @return optimal number of worker threads
+     */
+    private static int calculateWorkerThreads(int cpuCores) {
+        // For I/O bound workloads (proxy is mostly I/O), use more threads than cores
+        // Strategy:
+        // - 1-2 cores: 4 threads minimum (handle some concurrency)
+        // - 3-8 cores: 2x cores (standard for I/O bound)
+        // - 9-16 cores: 2x cores (good balance)
+        // - 17+ cores: 1.5x cores (diminishing returns, avoid too many threads)
+
+        if (cpuCores <= 2) {
+            return 4;  // Minimum for reasonable concurrency
+        } else if (cpuCores <= 16) {
+            return cpuCores * WORKER_THREADS_PER_CORE;  // 2x for I/O bound
+        } else {
+            // For high core count systems, use 1.5x to avoid thread explosion
+            return (int) Math.ceil(cpuCores * 1.5);
+        }
+    }
+
     public ProxyServer(int requestedPort, RequestFilter requestFilter, ResponseFilter responseFilter) {
+        // Calculate optimal thread pool size based on available CPU cores
+        int cpuCores = Runtime.getRuntime().availableProcessors();
+        int workerThreads = calculateWorkerThreads(cpuCores);
+
+        logger.info("detected {} CPU cores, using {} worker threads", cpuCores, workerThreads);
+
         // Use Epoll on Linux for better performance, fallback to NIO on other platforms
         boolean useEpoll = Epoll.isAvailable();
         if (useEpoll) {
-            bossGroup = new EpollEventLoopGroup(1);
-            workerGroup = new EpollEventLoopGroup(8);
+            bossGroup = new EpollEventLoopGroup(DEFAULT_BOSS_THREADS);
+            workerGroup = new EpollEventLoopGroup(workerThreads);
             logger.info("using Epoll event loop for optimal performance");
         } else {
-            bossGroup = new NioEventLoopGroup(1);
-            workerGroup = new NioEventLoopGroup(8);
+            bossGroup = new NioEventLoopGroup(DEFAULT_BOSS_THREADS);
+            workerGroup = new NioEventLoopGroup(workerThreads);
             logger.info("using NIO event loop");
             if (logger.isDebugEnabled() && Epoll.unavailabilityCause() != null) {
                 logger.debug("Epoll not available: {}", Epoll.unavailabilityCause().getMessage());
