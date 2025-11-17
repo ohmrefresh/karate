@@ -72,28 +72,40 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
     // Cached Bootstrap per EventLoopGroup for efficiency
     private static final Map<EventLoopGroup, Bootstrap> BOOTSTRAP_CACHE = new ConcurrentHashMap<>();
 
-    // Timeout configuration (in seconds)
-    private static final int CONNECT_TIMEOUT = 30;
-    private static final int READ_TIMEOUT = 60;
-    private static final int WRITE_TIMEOUT = 60;
-    private static final int IDLE_TIMEOUT = 120;
-
     protected final RequestFilter requestFilter;
     protected final ResponseFilter responseFilter;
     protected final EventLoopGroup eventLoopGroup;
+    protected final ProxyConfig config;
     private final Bootstrap bootstrap;
 
     private ProxyRemoteHandler remoteHandler;
     protected Channel clientChannel;
 
-    public ProxyClientHandler(RequestFilter requestFilter, ResponseFilter responseFilter, EventLoopGroup eventLoopGroup) {
+    /**
+     * Creates a new proxy client handler.
+     *
+     * @param requestFilter optional filter to intercept/modify requests
+     * @param responseFilter optional filter to intercept/modify responses
+     * @param eventLoopGroup shared event loop group for async I/O
+     * @param config proxy configuration (timeouts, limits, etc.)
+     */
+    public ProxyClientHandler(RequestFilter requestFilter, ResponseFilter responseFilter,
+                             EventLoopGroup eventLoopGroup, ProxyConfig config) {
         this.requestFilter = requestFilter;
         this.responseFilter = responseFilter;
         this.eventLoopGroup = eventLoopGroup;
+        this.config = config;
         // Get or create cached Bootstrap for this EventLoopGroup
         this.bootstrap = BOOTSTRAP_CACHE.computeIfAbsent(eventLoopGroup, this::createBootstrap);
     }
 
+    /**
+     * Creates a Bootstrap configured for outbound connections.
+     * Bootstrap is cached per EventLoopGroup to avoid recreation overhead.
+     *
+     * @param group the EventLoopGroup to use
+     * @return configured Bootstrap instance
+     */
     private Bootstrap createBootstrap(EventLoopGroup group) {
         // Determine channel class based on EventLoopGroup type
         Class<? extends SocketChannel> channelClass = group instanceof EpollEventLoopGroup
@@ -103,7 +115,7 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
         Bootstrap b = new Bootstrap();
         b.group(group)
          .channel(channelClass)
-         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONNECT_TIMEOUT * 1000)
+         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis())
          .option(ChannelOption.SO_KEEPALIVE, true)
          .option(ChannelOption.TCP_NODELAY, true);
 
@@ -179,13 +191,13 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
                     });
                 }
                 // Add timeout handlers for robustness
-                p.addLast("readTimeout", new ReadTimeoutHandler(READ_TIMEOUT, TimeUnit.SECONDS));
-                p.addLast("writeTimeout", new WriteTimeoutHandler(WRITE_TIMEOUT, TimeUnit.SECONDS));
-                p.addLast("idleStateHandler", new IdleStateHandler(IDLE_TIMEOUT, IDLE_TIMEOUT, 0, TimeUnit.SECONDS));
+                p.addLast("readTimeout", new ReadTimeoutHandler(config.getReadTimeoutSeconds(), TimeUnit.SECONDS));
+                p.addLast("writeTimeout", new WriteTimeoutHandler(config.getWriteTimeoutSeconds(), TimeUnit.SECONDS));
+                p.addLast("idleStateHandler", new IdleStateHandler(config.getIdleTimeoutSeconds(), config.getIdleTimeoutSeconds(), 0, TimeUnit.SECONDS));
                 // HTTP codec and handlers
                 p.addLast(new HttpClientCodec());
                 p.addLast(new HttpContentDecompressor());
-                p.addLast(new HttpObjectAggregator(1048576));
+                p.addLast(new HttpObjectAggregator(config.getMaxContentLength()));
                 // Create and register proxy handler
                 remoteHandler = new ProxyRemoteHandler(pc, ProxyClientHandler.this, isConnect ? null : request);
                 REMOTE_HANDLERS.put(pc.hostColonPort, remoteHandler);
