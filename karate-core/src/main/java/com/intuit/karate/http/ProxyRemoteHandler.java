@@ -82,6 +82,9 @@ public class ProxyRemoteHandler extends SimpleChannelInboundHandler<FullHttpResp
             }
         }
 
+        // Ensure UTF-8 charset for text content
+        HttpUtils.ensureUtf8Charset(response);
+
         // HTTP keep-alive support: only close if requested
         boolean shouldClose = shouldCloseConnection(currentRequest, response);
 

@@ -256,6 +256,46 @@ public class HttpUtils {
         request.setUri(adjustedUri);
         request.headers().remove(HttpHeaderNames.CONNECTION);
         // addViaHeader(request, PROXY_ALIAS);
+        ensureUtf8Charset(request);
+    }
+
+    /**
+     * Ensures UTF-8 charset is specified for text-based Content-Type headers.
+     * HTTP/1.1 defaults to ISO-8859-1 if no charset is specified, which can
+     * cause encoding issues with UTF-8 content. This method adds charset=UTF-8
+     * to appropriate content types if not already present.
+     *
+     * @param msg the HTTP message (request or response)
+     */
+    public static void ensureUtf8Charset(HttpMessage msg) {
+        String contentType = msg.headers().get(HttpHeaderNames.CONTENT_TYPE);
+        if (contentType == null || contentType.isEmpty()) {
+            return;
+        }
+
+        // Check if charset is already specified
+        if (contentType.toLowerCase().contains("charset=")) {
+            return;
+        }
+
+        // Only add charset to text-based content types
+        String lowerContentType = contentType.toLowerCase();
+        boolean isTextBased = lowerContentType.startsWith("text/")
+            || lowerContentType.startsWith("application/json")
+            || lowerContentType.startsWith("application/xml")
+            || lowerContentType.startsWith("application/javascript")
+            || lowerContentType.startsWith("application/x-www-form-urlencoded")
+            || lowerContentType.contains("+json")
+            || lowerContentType.contains("+xml");
+
+        if (isTextBased) {
+            // Add charset=UTF-8 to Content-Type header
+            String newContentType = contentType + "; charset=UTF-8";
+            msg.headers().set(HttpHeaderNames.CONTENT_TYPE, newContentType);
+            if (logger.isTraceEnabled()) {
+                logger.trace("** added UTF-8 charset: {} -> {}", contentType, newContentType);
+            }
+        }
     }
 
     public static void addViaHeader(HttpMessage msg, String alias) {
