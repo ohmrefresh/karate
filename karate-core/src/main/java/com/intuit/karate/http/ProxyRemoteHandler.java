@@ -51,17 +51,20 @@ public class ProxyRemoteHandler extends SimpleChannelInboundHandler<FullHttpResp
     private final ResponseFilter responseFilter;
     private final Channel clientChannel;
     private final FullHttpRequest initialRequest;
+    private final boolean isConnect;
 
     protected Channel remoteChannel;
     protected FullHttpRequest currentRequest;
 
-    public ProxyRemoteHandler(ProxyContext proxyContext, ProxyClientHandler clientHandler, FullHttpRequest initialRequest) {
+    public ProxyRemoteHandler(ProxyContext proxyContext, ProxyClientHandler clientHandler,
+                             FullHttpRequest initialRequest, boolean isConnect) {
         this.proxyContext = proxyContext;
         this.clientHandler = clientHandler;
         this.clientChannel = clientHandler.clientChannel;
         this.requestFilter = clientHandler.requestFilter;
         this.responseFilter = clientHandler.responseFilter;
         this.initialRequest = initialRequest;
+        this.isConnect = isConnect;
     }
 
     @Override
@@ -120,6 +123,18 @@ public class ProxyRemoteHandler extends SimpleChannelInboundHandler<FullHttpResp
 
     protected void send(FullHttpRequest request) {
         currentRequest = request;
+
+        // Validate channel is ready before sending
+        if (remoteChannel == null || !remoteChannel.isActive()) {
+            logger.error("** cannot send - channel not active: {}", proxyContext.hostColonPort);
+            HttpUtils.flushAndClose(clientChannel);
+            return;
+        }
+
+        if (!remoteChannel.isWritable()) {
+            logger.warn("** channel not writable, write may be queued: {}", proxyContext.hostColonPort);
+        }
+
         FullHttpRequest filtered;
         if (requestFilter != null) {
             ProxyResponse pr = requestFilter.apply(proxyContext, request);
@@ -143,12 +158,32 @@ public class ProxyRemoteHandler extends SimpleChannelInboundHandler<FullHttpResp
             }
         }
         HttpUtils.fixHeadersForProxy(filtered);
-        remoteChannel.writeAndFlush(filtered);
+
+        // Write with failure handling
+        remoteChannel.writeAndFlush(filtered).addListener(future -> {
+            if (!future.isSuccess()) {
+                logger.error("** write failed for {}: {}", proxyContext.hostColonPort, future.cause().getMessage());
+                // Remove from pool on write failure
+                ProxyClientHandler.removeHandler(proxyContext.hostColonPort, this);
+                HttpUtils.flushAndClose(clientChannel);
+            }
+        });
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
         remoteChannel = ctx.channel();
+
+        // Only add to connection pool for non-SSL connections when channel is ready
+        // SSL/CONNECT connections create new pipelines each time
+        if (!isConnect && remoteChannel.isActive() && remoteChannel.isWritable()) {
+            ProxyClientHandler.addToPool(proxyContext.hostColonPort, this);
+            if (logger.isTraceEnabled()) {
+                logger.trace("** added handler to pool: {} (total connections: {})",
+                    proxyContext.hostColonPort, ProxyClientHandler.getPoolSize());
+            }
+        }
+
         if (initialRequest != null) { // only if not ssl
             send(initialRequest);
             // No need to unlock - we're now fully async!

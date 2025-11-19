@@ -139,13 +139,26 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
         // if ssl CONNECT, always create new remote pipeline
         if (remoteHandler == null && !isConnect) {
             remoteHandler = REMOTE_HANDLERS.get(pc.hostColonPort);
-            // Validate connection is still active
-            if (remoteHandler != null && (remoteHandler.remoteChannel == null || !remoteHandler.remoteChannel.isActive())) {
-                if (logger.isTraceEnabled()) {
-                    logger.trace("** removing stale connection: {}", pc.hostColonPort);
+            // Validate connection is healthy and ready for reuse
+            if (remoteHandler != null) {
+                Channel ch = remoteHandler.remoteChannel;
+                // Check: channel exists, is active, is registered, and is writable
+                boolean isHealthy = ch != null
+                    && ch.isActive()
+                    && ch.isRegistered()
+                    && ch.isWritable();
+
+                if (!isHealthy) {
+                    if (logger.isTraceEnabled()) {
+                        logger.trace("** removing unhealthy connection: {} (active={}, registered={}, writable={})",
+                            pc.hostColonPort,
+                            ch != null && ch.isActive(),
+                            ch != null && ch.isRegistered(),
+                            ch != null && ch.isWritable());
+                    }
+                    REMOTE_HANDLERS.remove(pc.hostColonPort);
+                    remoteHandler = null;
                 }
-                REMOTE_HANDLERS.remove(pc.hostColonPort);
-                remoteHandler = null;
             }
         }
         if (remoteHandler != null) {
@@ -198,13 +211,9 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
                 p.addLast(new HttpClientCodec());
                 p.addLast(new HttpContentDecompressor());
                 p.addLast(new HttpObjectAggregator(config.getMaxContentLength()));
-                // Create and register proxy handler
-                remoteHandler = new ProxyRemoteHandler(pc, ProxyClientHandler.this, isConnect ? null : request);
-                REMOTE_HANDLERS.put(pc.hostColonPort, remoteHandler);
+                // Create proxy handler (will be added to pool when channel is active and ready)
+                remoteHandler = new ProxyRemoteHandler(pc, ProxyClientHandler.this, isConnect ? null : request, isConnect);
                 p.addLast(remoteHandler);
-                if (logger.isTraceEnabled()) {
-                    logger.trace("updated remote handlers: {}", REMOTE_HANDLERS);
-                }
             }
         });
         ChannelFuture cf = b.connect(pc.host, pc.port);
@@ -234,12 +243,37 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
         }
     }
 
-    // Remove handler from shared pool when connection closes
+    /**
+     * Adds a handler to the shared connection pool.
+     * Only called when the channel is fully active and ready.
+     *
+     * @param hostColonPort the host:port key
+     * @param handler the handler to add
+     */
+    protected static void addToPool(String hostColonPort, ProxyRemoteHandler handler) {
+        REMOTE_HANDLERS.put(hostColonPort, handler);
+    }
+
+    /**
+     * Removes a handler from the shared connection pool.
+     *
+     * @param hostColonPort the host:port key
+     * @param handler the handler to remove
+     */
     protected static void removeHandler(String hostColonPort, ProxyRemoteHandler handler) {
         REMOTE_HANDLERS.remove(hostColonPort, handler);
         if (logger.isTraceEnabled()) {
-            logger.trace("** removed handler from pool: {}", hostColonPort);
+            logger.trace("** removed handler from pool: {} (remaining: {})", hostColonPort, REMOTE_HANDLERS.size());
         }
+    }
+
+    /**
+     * Gets the current size of the connection pool.
+     *
+     * @return number of pooled connections
+     */
+    protected static int getPoolSize() {
+        return REMOTE_HANDLERS.size();
     }
 
 }
