@@ -123,6 +123,7 @@ public class ProxyRemoteHandler extends SimpleChannelInboundHandler<FullHttpResp
         }
         ctx.close();
         HttpUtils.flushAndClose(clientChannel);
+        clientHandler.unlockAndProceed(); // Unlock to prevent indefinite blocking on exception
     }
 
     @Override

@@ -105,6 +105,12 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
                     SslHandler remoteSslHandler = new SslHandler(remoteSslEngine);
                     p.addLast(remoteSslHandler);
                     remoteSslHandler.handshakeFuture().addListener(rhf -> {
+                        if (!rhf.isSuccess()) {
+                            logger.error("remote SSL handshake failed: {}", rhf.cause() != null ? rhf.cause().getMessage() : "unknown");
+                            HttpUtils.flushAndClose(clientChannel);
+                            HttpUtils.flushAndClose(remoteChannel);
+                            return;
+                        }
                         if (logger.isTraceEnabled()) {
                             logger.trace("** ssl: server handshake done: {}", remoteChannel);
                         }
@@ -119,6 +125,13 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
                             clientChannel.pipeline().addFirst(clientSslHandler);
                         });
                         clientSslHandler.handshakeFuture().addListener(chf -> {
+                            if (!chf.isSuccess()) {
+                                logger.error("client SSL handshake failed: {}", chf.cause() != null ? chf.cause().getMessage() : "unknown");
+                                HttpUtils.flushAndClose(clientChannel);
+                                HttpUtils.flushAndClose(remoteChannel);
+                                unlockAndProceed(); // Unlock on client SSL handshake failure
+                                return;
+                            }
                             if (logger.isTraceEnabled()) {
                                 logger.trace("** ssl: client handshake done: {}", clientChannel);
                             }
@@ -145,7 +158,9 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
                     logger.trace("** ready: {} - {}", pc, cf.channel());
                 }
             } else {
+                logger.error("proxy connection failed: {}", future.cause() != null ? future.cause().getMessage() : "unknown");
                 HttpUtils.flushAndClose(clientChannel);
+                unlockAndProceed(); // Unlock to prevent indefinite blocking on connection failure
             }
         });
         if (!isConnect) {
@@ -155,7 +170,7 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
 
     private void lockAndWait() throws Exception {
         synchronized (LOCK) {
-            LOCK.wait();
+            LOCK.wait(30000); // 30 second timeout to prevent indefinite blocking
         }
     }
 
@@ -173,7 +188,10 @@ public class ProxyClientHandler extends SimpleChannelInboundHandler<FullHttpRequ
             logger.error("closing proxy inbound connection: {}", cause.getMessage());
         }
         ctx.close();
-        HttpUtils.flushAndClose(remoteHandler.remoteChannel);
+        if (remoteHandler != null) {
+            HttpUtils.flushAndClose(remoteHandler.remoteChannel);
+        }
+        unlockAndProceed(); // Unlock to prevent indefinite blocking on exception
     }
 
 }
