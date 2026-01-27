@@ -40,6 +40,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -71,8 +72,9 @@ public class MockHandler implements ServerHandler {
     private static final String BODY_PATH = "bodyPath";
 
     private final LinkedHashMap<Feature, ScenarioRuntime> scenarioRuntimes = new LinkedHashMap<>(); // feature + holds global config and vars
-    private final Map<String, Variable> globals = new HashMap<>();
+    private final Map<String, Variable> globals = new ConcurrentHashMap<>();
     private boolean corsEnabled;
+    private final Object GLOBALS_LOCK = new Object(); // lock for atomic globals updates
 
     protected static final ThreadLocal<Request> LOCAL_REQUEST = new ThreadLocal<>();
     private final String prefix;
@@ -154,7 +156,7 @@ public class MockHandler implements ServerHandler {
     private static final String ALLOWED_METHODS = "GET, HEAD, POST, PUT, DELETE, PATCH";
 
     @Override
-    public synchronized Response handle(Request req) { // note the [synchronized]
+    public Response handle(Request req) { // [synchronized] REMOVED to prevent deadlock in chained proxy scenarios
         if (corsEnabled && "OPTIONS".equals(req.getMethod())) {
             Response response = new Response(200);
             response.setHeader("Allow", ALLOWED_METHODS);
@@ -172,75 +174,82 @@ public class MockHandler implements ServerHandler {
         // rare case when http-client is active within same jvm
         // snapshot existing thread-local to restore
         ScenarioEngine prevEngine = ScenarioEngine.get();
-        for (Map.Entry<Feature, ScenarioRuntime> entry : scenarioRuntimes.entrySet()) {
-            Feature feature = entry.getKey();
-            ScenarioRuntime runtime = entry.getValue();
-            // important for graal to work properly
-            Thread.currentThread().setContextClassLoader(runtime.featureRuntime.suite.classLoader);            
-            LOCAL_REQUEST.set(req);
-            req.processBody();
-            ScenarioEngine engine = initEngine(runtime, globals, req);
-            for (FeatureSection fs : feature.getSections()) {
-                if (fs.isOutline()) {
-                    runtime.logger.warn("skipping scenario outline - {}:{}", feature, fs.getScenarioOutline().getLine());
-                    break;
+        try {
+            for (Map.Entry<Feature, ScenarioRuntime> entry : scenarioRuntimes.entrySet()) {
+                Feature feature = entry.getKey();
+                ScenarioRuntime runtime = entry.getValue();
+                // important for graal to work properly
+                Thread.currentThread().setContextClassLoader(runtime.featureRuntime.suite.classLoader);            
+                LOCAL_REQUEST.set(req);
+                req.processBody();
+                Map<String, Variable> globalsSnapshot;
+                synchronized (GLOBALS_LOCK) {
+                    globalsSnapshot = new HashMap<>(globals);
                 }
-                Scenario scenario = fs.getScenario();
-                if (isMatchingScenario(scenario, engine)) {
-                    Map<String, Object> configureHeaders;
-                    Variable response, responseStatus, responseHeaders, responseDelay;
-                    ScenarioActions actions = new ScenarioActions(engine);
-                    Result result = executeScenarioSteps(feature, runtime, scenario, actions);
-                    engine.mockAfterScenario();
-                    configureHeaders = engine.mockConfigureHeaders();
-                    response = engine.vars.remove(ScenarioEngine.RESPONSE);
-                    responseStatus = engine.vars.remove(ScenarioEngine.RESPONSE_STATUS);
-                    responseHeaders = engine.vars.remove(ScenarioEngine.RESPONSE_HEADERS);
-                    responseDelay = engine.vars.remove(RESPONSE_DELAY);
-                    globals.putAll(engine.shallowCloneVariables());
-                    Response res = new Response(200);
-                    if (result.isFailed()) {
-                        response = new Variable(result.getError().getMessage());
-                        responseStatus = new Variable(500);
-                    } else {
-                        if (corsEnabled) {
-                            res.setHeader("Access-Control-Allow-Origin", "*");
-                        }
-                        res.setHeaders(configureHeaders);
-                        if (responseHeaders != null && responseHeaders.isMap()) {
-                            res.setHeaders(responseHeaders.getValue());
-                        }
-                        if (responseDelay != null) {
-                            res.setDelay(responseDelay.getAsInt());
-                        }
+                ScenarioEngine engine = initEngine(runtime, globalsSnapshot, req);
+                for (FeatureSection fs : feature.getSections()) {
+                    if (fs.isOutline()) {
+                        runtime.logger.warn("skipping scenario outline - {}:{}", feature, fs.getScenarioOutline().getLine());
+                        break;
                     }
-                    if (response != null && !response.isNull()) {
-                        res.setBody(response.getAsByteArray());
-                        if (res.getContentType() == null) {
-                            ResourceType rt = ResourceType.fromObject(response.getValue());
-                            if (rt != null) {
-                                res.setContentType(rt.contentType);
+                    Scenario scenario = fs.getScenario();
+                    if (isMatchingScenario(scenario, engine)) {
+                        Map<String, Object> configureHeaders;
+                        Variable response, responseStatus, responseHeaders, responseDelay;
+                        ScenarioActions actions = new ScenarioActions(engine);
+                        Result result = executeScenarioSteps(feature, runtime, scenario, actions);
+                        engine.mockAfterScenario();
+                        configureHeaders = engine.mockConfigureHeaders();
+                        response = engine.vars.remove(ScenarioEngine.RESPONSE);
+                        responseStatus = engine.vars.remove(ScenarioEngine.RESPONSE_STATUS);
+                        responseHeaders = engine.vars.remove(ScenarioEngine.RESPONSE_HEADERS);
+                        responseDelay = engine.vars.remove(RESPONSE_DELAY);
+                        synchronized (GLOBALS_LOCK) {
+                            globals.putAll(engine.shallowCloneVariables());
+                        }
+                        Response res = new Response(200);
+                        if (result.isFailed()) {
+                            response = new Variable(result.getError().getMessage());
+                            responseStatus = new Variable(500);
+                        } else {
+                            if (corsEnabled) {
+                                res.setHeader("Access-Control-Allow-Origin", "*");
+                            }
+                            res.setHeaders(configureHeaders);
+                            if (responseHeaders != null && responseHeaders.isMap()) {
+                                res.setHeaders(responseHeaders.getValue());
+                            }
+                            if (responseDelay != null) {
+                                res.setDelay(responseDelay.getAsInt());
                             }
                         }
+                        if (response != null && !response.isNull()) {
+                            res.setBody(response.getAsByteArray());
+                            if (res.getContentType() == null) {
+                                ResourceType rt = ResourceType.fromObject(response.getValue());
+                                if (rt != null) {
+                                    res.setContentType(rt.contentType);
+                                }
+                            }
+                        }
+                        if (responseStatus != null) {
+                            res.setStatus(responseStatus.getAsInt());
+                        }
+                        if (mockInterceptor != null) {
+                            mockInterceptor.intercept(req, res, scenario);
+                        }
+                        return res;
                     }
-                    if (responseStatus != null) {
-                        res.setStatus(responseStatus.getAsInt());
-                    }
-                    if (prevEngine != null) {
-                        ScenarioEngine.set(prevEngine);
-                    }
-                    if (mockInterceptor != null) {
-                        mockInterceptor.intercept(req, res, scenario);
-                    }
-                    return res;
                 }
             }
+            logger.warn("no scenarios matched, returning 404: {}", req); // NOTE: not logging with engine.logger
+            return new Response(404);
+        } finally {
+            LOCAL_REQUEST.remove(); // cleanup ThreadLocal to prevent memory leak
+            if (prevEngine != null) {
+                ScenarioEngine.set(prevEngine);
+            }
         }
-        logger.warn("no scenarios matched, returning 404: {}", req); // NOTE: not logging with engine.logger
-        if (prevEngine != null) {
-            ScenarioEngine.set(prevEngine);
-        }
-        return new Response(404);
     }
     
     private static ScenarioEngine initEngine(ScenarioRuntime runtime, Map<String, Variable> globals, Request req) {
