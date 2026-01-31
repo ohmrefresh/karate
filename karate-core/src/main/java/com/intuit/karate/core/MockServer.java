@@ -33,6 +33,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
 
 /**
@@ -65,6 +67,7 @@ public class MockServer extends HttpServer {
         String prefix = null;
         MockInterceptor interceptor = null;
         boolean keepOriginalHeaders;
+        int blockingThreads = 0; // 0 means use Armeria default
 
         public Builder watch(boolean value) {
             watch = value;
@@ -123,9 +126,18 @@ public class MockServer extends HttpServer {
             return this;
         }
 
+        public Builder blockingThreads(int value) {
+            blockingThreads = value;
+            return this;
+        }
+
         public MockServer build() {
             ServerBuilder sb = Server.builder();
             sb.requestTimeoutMillis(0);
+            if (blockingThreads > 0) {
+                ScheduledExecutorService executor = Executors.newScheduledThreadPool(blockingThreads);
+                sb.blockingTaskExecutor(executor, true);
+            }
             if (ssl) {
                 sb.https(port);
                 SslContextFactory factory = new SslContextFactory();
