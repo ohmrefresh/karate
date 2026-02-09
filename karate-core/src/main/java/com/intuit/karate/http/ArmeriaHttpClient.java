@@ -104,13 +104,11 @@ public class ArmeriaHttpClient implements HttpClient, DecoratingHttpClientFuncti
         for (CharSequence name : rh.names()) {
             if (!HttpHeaderNames.STATUS.equals(name)) {
                 String headerName = name.toString();
-                responseHeaders.put(headerName, rh.getAll(name));
+                List<String> headerValues = rh.getAll(name);
+                responseHeaders.put(headerName, headerValues);
                 // capture content-encoding value for brotli decompression (case-insensitive)
-                if (HttpConstants.HDR_CONTENT_ENCODING.equalsIgnoreCase(headerName)) {
-                    List<String> values = rh.getAll(name);
-                    if (!values.isEmpty()) {
-                        contentEncodingValue = values.get(0);
-                    }
+                if (HttpConstants.HDR_CONTENT_ENCODING.equalsIgnoreCase(headerName) && !headerValues.isEmpty()) {
+                    contentEncodingValue = headerValues.get(0);
                 }
             }
         }
@@ -121,7 +119,7 @@ public class ArmeriaHttpClient implements HttpClient, DecoratingHttpClientFuncti
                 InputStream is = new BrotliInputStream(new ByteArrayInputStream(responseBody));
                 responseBody = FileUtils.toBytes(is);
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                throw new RuntimeException("Failed to decompress Brotli response", e);
             }
         }
         Response response = new Response(ahr.status().code(), responseHeaders, responseBody);
