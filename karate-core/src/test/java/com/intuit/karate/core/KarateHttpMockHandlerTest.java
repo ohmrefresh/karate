@@ -2,6 +2,7 @@ package com.intuit.karate.core;
 
 import static com.intuit.karate.TestUtils.*;
 import static com.intuit.karate.TestUtils.runScenario;
+import com.intuit.karate.http.ApacheHttpClient;
 import com.intuit.karate.http.HttpServer;
 import java.util.List;
 import java.util.Map;
@@ -95,7 +96,7 @@ class KarateHttpMockHandlerTest {
                 "pathMatches('/hello')",
                 "def response = requestHeaders");
         startMockServer();
-        run(
+        runtime = runScenario(ApacheHttpClient::new,
                 urlStep(),
                 "path '/hello'",
                 "request 42",
@@ -111,7 +112,7 @@ class KarateHttpMockHandlerTest {
                 "pathMatches('/hello')",
                 "def response = requestHeaders");
         startMockServer();
-        run(
+        runtime = runScenario(ApacheHttpClient::new,
                 urlStep(),
                 "path 'hello'",
                 "cookie foo = 'bar'",
@@ -126,7 +127,7 @@ class KarateHttpMockHandlerTest {
                 "pathMatches('/hello')",
                 "def response = requestHeaders");
         startMockServer();
-        run(
+        runtime = runScenario(ApacheHttpClient::new,
                 urlStep(),
                 "path 'hello'",
                 "cookie foo = { value: 'bar', samesite: 'Strict', secure: true }",
@@ -271,7 +272,7 @@ class KarateHttpMockHandlerTest {
                         "def response = requestHeaders",
                         "def responseHeaders = { 'Set-Cookie': 'foo2=bar2' }");
         startMockServer();
-        run(
+        runtime = runScenario(ApacheHttpClient::new,
                 urlStep(),
                 "path 'first'",
                 "form fields { username: 'blah', password: 'blah' }",
@@ -342,7 +343,7 @@ class KarateHttpMockHandlerTest {
 
         );
         startMockServer();
-        run(
+        runtime = runScenario(ApacheHttpClient::new,
                 urlStep(),
                 "path 'hello'",
                 "method get"
