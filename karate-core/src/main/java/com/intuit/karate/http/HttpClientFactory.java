@@ -34,6 +34,6 @@ public interface HttpClientFactory {
 
     HttpClient create(ScenarioEngine engine);
 
-    HttpClientFactory DEFAULT = ApacheHttpClient::new;
+    HttpClientFactory DEFAULT = engine -> new ArmeriaHttpClient(engine.getConfig(), engine.logger);
 
 }
