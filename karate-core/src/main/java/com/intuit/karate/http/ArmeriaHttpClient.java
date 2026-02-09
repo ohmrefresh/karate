@@ -24,6 +24,7 @@
 package com.intuit.karate.http;
 
 import com.intuit.karate.Constants;
+import com.intuit.karate.FileUtils;
 import com.intuit.karate.Logger;
 import com.intuit.karate.StringUtils;
 import com.intuit.karate.core.Config;
@@ -40,11 +41,14 @@ import com.linecorp.armeria.common.RequestHeadersBuilder;
 import com.linecorp.armeria.common.ResponseHeaders;
 import com.linecorp.armeria.common.logging.RequestLogProperty;
 import com.linecorp.armeria.server.ServiceRequestContext;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
+import org.brotli.dec.BrotliInputStream;
 
 /**
  *
@@ -96,12 +100,30 @@ public class ArmeriaHttpClient implements HttpClient, DecoratingHttpClientFuncti
         }
         ResponseHeaders rh = ahr.headers();
         Map<String, List<String>> responseHeaders = new LinkedHashMap(rh.size());
+        String contentEncodingValue = null;
         for (CharSequence name : rh.names()) {
             if (!HttpHeaderNames.STATUS.equals(name)) {
-                responseHeaders.put(name.toString(), rh.getAll(name));
+                String headerName = name.toString();
+                responseHeaders.put(headerName, rh.getAll(name));
+                // capture content-encoding value for brotli decompression (case-insensitive)
+                if (HttpConstants.HDR_CONTENT_ENCODING.equalsIgnoreCase(headerName)) {
+                    List<String> values = rh.getAll(name);
+                    if (!values.isEmpty()) {
+                        contentEncodingValue = values.get(0);
+                    }
+                }
             }
         }
         byte[] responseBody = ahr.content().isEmpty() ? Constants.ZERO_BYTES : ahr.content().array();
+        // handle brotli decompression
+        if (contentEncodingValue != null && "br".equalsIgnoreCase(contentEncodingValue)) {
+            try {
+                InputStream is = new BrotliInputStream(new ByteArrayInputStream(responseBody));
+                responseBody = FileUtils.toBytes(is);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
         Response response = new Response(ahr.status().code(), responseHeaders, responseBody);
         httpLogger.logResponse(config, request, response);
         return response;
